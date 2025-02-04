@@ -1,6 +1,7 @@
 import { Component, OnInit, ViewChild, ElementRef, NgZone } from '@angular/core';
 import { NgIf } from '@angular/common';
 import * as faceapi from 'face-api.js';
+import axios from 'axios';
 
 @Component({
   selector: 'app-face-detection',
@@ -15,6 +16,9 @@ export class FaceDetectionComponent implements OnInit {
 
   age: number | null = null;
   mood: string | null = null;
+  gender: string | null = null;
+  private uploadInterval: number = 1000; // ミリ秒単位
+  private lastUploadTime: number = 0;
 
   constructor(private ngZone: NgZone) { }
 
@@ -27,6 +31,8 @@ export class FaceDetectionComponent implements OnInit {
       console.log('Video started');
       this.detect();
       console.log('Detection started');
+
+      this.uploadInterval = 1 * 1000; // 秒からミリ秒に変換
     } catch (error) {
       console.error('Error in ngOnInit:', error);
     }
@@ -54,26 +60,55 @@ export class FaceDetectionComponent implements OnInit {
     const canvas = this.canvasElement.nativeElement;
     const displaySize = { width: video.width, height: video.height };
     faceapi.matchDimensions(canvas, displaySize);
-
+  
     this.ngZone.runOutsideAngular(() => {
-      setInterval(async () => {
-        const detections = await faceapi.detectAllFaces(video)
-          .withFaceExpressions()
-          .withAgeAndGender();
-
-        const resizedDetections = faceapi.resizeResults(detections, displaySize);
-        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-        faceapi.draw.drawDetections(canvas, resizedDetections);
-
-        if (resizedDetections.length > 0) {
-          const { age, expressions } = resizedDetections[0];
-
-          this.ngZone.run(() => {
-            this.age = Math.round(age);
-            this.mood = this.getMaxExpression(expressions);
-          });
+      const intervalId = setInterval(async () => {
+        try {
+          const detections = await faceapi.detectAllFaces(video)
+            .withFaceExpressions()
+            .withAgeAndGender();
+  
+          const resizedDetections = faceapi.resizeResults(detections, displaySize);
+          canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+          faceapi.draw.drawDetections(canvas, resizedDetections);
+  
+          if (resizedDetections.length > 0) {
+            const { age, gender, expressions } = resizedDetections[0];
+  
+            this.ngZone.run(() => {
+              this.age = Math.round(age);
+              this.gender = gender;
+              this.mood = this.getMaxExpression(expressions);
+            });
+  
+            const currentTime = Date.now();
+            if (currentTime - this.lastUploadTime >= this.uploadInterval) {
+              if (this.age !== null && this.mood !== null && this.gender !== null) {
+                // Capture image and prepare data
+                const imageBlob = await this.getVideoBlob(video);
+                const formData = new FormData();
+                formData.append('file', imageBlob, 'image.png');
+                formData.append('age', this.age.toString());
+                formData.append('gender', this.gender);
+                formData.append('mood', this.mood);
+  
+                // Upload data
+                this.lastUploadTime = currentTime;
+                const result = await axios.post('http://localhost:8000/upload', formData);
+                console.log('Data uploaded:', result.data);
+              } else {
+                console.log('Skipping upload due to null values'
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error uploading data:', error);
         }
-      }, 100);
+      }, 500);
+  
+      // Cleanup on component destroy
+      return () => clearInterval(intervalId);
     });
   }
 
@@ -82,5 +117,35 @@ export class FaceDetectionComponent implements OnInit {
       probability > max.probability ? { expression, probability } : max,
       { expression: '', probability: -1 }
     ).expression;
+  }
+
+  getVideoBlob(video: HTMLVideoElement): Promise<Blob> {
+    return new Promise(resolve => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          if (blob) {
+            resolve(blob);
+          }
+        }, 'image/png');
+      }
+    });
+  }
+
+  // インターバルを設定するメソッド
+  async setUploadInterval(seconds: number) {
+    const response = await fetch('http://localhost:8000/set-interval/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ interval: seconds }),
+    });
+    const data = await response.json();
+    this.uploadInterval = seconds * 1000;
   }
 }
