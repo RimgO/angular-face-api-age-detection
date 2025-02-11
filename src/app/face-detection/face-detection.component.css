@@ -54,3 +54,13 @@ canvas {
   font-size: 24px;
   color: #007bff;
 }
+
+.info2-container {
+  display: list-item;
+  justify-content: space-around;
+  width: 100%;
+  background-color: #f0f0f0;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}

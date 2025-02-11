@@ -8,14 +8,31 @@
     <div *ngIf="age" class="info-item">
       <span class="label">Age:</span>
       <span class="value">{{age}}</span>
+      <span class="label">Age (Median):</span>
+      <span class="value">{{median_age}}</span>
     </div>
     <div *ngIf="gender" class="info-item">
       <span class="label">Gender:</span>
       <span class="value">{{gender}}</span>
+      <span class="label">Gender (Median):</span>
+      <span class="value">{{mode_gender}}</span>
     </div>
     <div *ngIf="mood" class="info-item">
       <span class="label">Mood:</span>
       <span class="value">{{mood}}</span>
+      <span class="label">Mood (Median):</span>
+      <span class="value">{{mode_mood}}</span>
+    </div>
+  </div>
+
+  <div class="info2-container">
+    <div *ngIf="recognizestate" class="info-item">
+      <span class="label">Status:</span>
+      <span class="value">{{recognizestate}}</span>
+    </div>
+    <div *ngIf="recognizedname" class="info-item">
+      <span class="label">Name:</span>
+      <span class="value">{{recognizedname}}</span>
     </div>
   </div>
 </div>
