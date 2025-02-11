@@ -39,15 +39,19 @@ export class FaceDetectionComponent implements OnInit {
 
   recognizestate : boolean | null = null;
   recognizedname: string | null = null;
+  updatename: string | null = null;
 
   private recognitionInterval: number = 10000; // ミリ秒単位
   private lastRecognitionTime: number = 0;
 
-  private hasKnownName: boolean = false;
+  private hasExactName: boolean = false;
 
   median_age: any;
   mode_gender: any;
   mode_mood: any;
+
+  private errorState: boolean = false;
+  private errorMessage: string = '';
 
   constructor(private ngZone: NgZone) { }
 
@@ -116,8 +120,12 @@ export class FaceDetectionComponent implements OnInit {
     this.age_buf = [];
     this.gender_buf = [];
     this.mood_buf = [];
+    this.median_age = null;
+    this.mode_gender = null;
+    this.mode_mood = null;
     this.recognizestate = false;
-    this.recognizedname = 'Unknown';
+    this.recognizedname = null;
+    this.hasExactName = false;
 
     this.ngZone.runOutsideAngular(() => {
       const intervalId = setInterval(async () => {
@@ -186,10 +194,9 @@ export class FaceDetectionComponent implements OnInit {
                     this.prevPosition = { x, y };
 
                     const resultFace = await recognizeFace(detection.descriptor);
-                    console.log('Recognition isKnownFace:', resultFace.isKnownFace);
-                    if (!resultFace.isKnownFace) {
+                    console.log('Recognition isKnownFace:', resultFace.isKnownFace,resultFace.name, resultFace.distance);
+                    if (!resultFace.isKnownFace || resultFace.name==undefined) { //顔が認識されたが名前が不明の場合
                       this.recognizestate = false;
-                      this.recognizedname = 'Unknown';
                       //動かずに連続N回認識されたら登録
                       if(this.stillCounter > THRESHOLD_STILL) {
                         console.error('Count Full. Let me Register');
@@ -206,7 +213,7 @@ export class FaceDetectionComponent implements OnInit {
                             console.log('Registering face with name:', newName);
                             registerFace(detection.descriptor, newName.trim());
                             this.recognizedname = newName;  //暫定の名前を設定
-                            this.hasKnownName = false;  //本当の名前は不明のためfalse
+                            this.hasExactName = false;  //本当の名前は不明のためfalse
                             this.recognizestate = true; //名前は知らないが顔は覚えた状態
                         } catch (error) {
                           console.error('Error On Recognizing:', error);
@@ -214,45 +221,49 @@ export class FaceDetectionComponent implements OnInit {
                       }
                     } else { //顔が認識された場合
                       this.recognizestate = true;
-                      this.recognizedname = resultFace.name ?? null;
-                      //名前を知っていたら更新
-                      if (resultFace.name?.endsWith('male') && this.hasKnownName) {
-                        console.log('Updating face with name:', resultFace.name);
-                        updateFace(detection.descriptor, resultFace.name);
+                      console.log('Face Has ExactName?:', resultFace.name, this.hasExactName, this.recognizedname);
+                      //暫定の名前が設定されていたら更新
+                      if (resultFace.name != null){
+                        if(resultFace.name.endsWith('male')) {
+                          this.updateNameForCurrentFace(detection.descriptor, resultFace.name);
+                          //this.hasExactName = true;
+                          //this.updatename = this.updatename;
+                        }
                       }
-                    }
+                    }                    
                   } else {  //顔が認識されなかった場合
                     this.stillCounter = 0;
                     this.recognizestate = false;
                   }
-                } catch (error) {
-                  console.error('Error Recognizing:', error);
-                }
-                this.lastRecognitionTime = currentTime;
-              }
-
-              if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate !== null) {
+                  if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate == true) {
                   
-                // Capture image and prepare data
-                const imageBlob = await this.getVideoBlob(video);
-                const formData = new FormData();
-                formData.append('file', imageBlob, 'image.png');
-                formData.append('age', this.median_age.toString());
-                formData.append('gender', this.mode_gender);
-                formData.append('mood', this.mode_mood);
-                // Face recognition
-                formData.append('recognizestate', this.recognizestate?.toString() || 'false');
-                formData.append('recognizedname', this.recognizedname || 'Unknown');
+                    // Capture image and prepare data
+                    const imageBlob = await this.getVideoBlob(video);
+                    const formData = new FormData();
+                    formData.append('file', imageBlob, 'image.png');
+                    formData.append('age', this.median_age);
+                    formData.append('gender', this.mode_gender);
+                    formData.append('mood', this.mode_mood);
+                    // Face recognition
+                    formData.append('recognizestate', this.recognizestate?.toString());
+                    formData.append('recognizedname', this.recognizedname || 'Unknown');
+    
+                    // Upload data
+                    this.lastUploadTime = currentTime;
+                    const result = await axios.post('http://localhost:8000/upload', formData);
+                    console.log('Data uploaded:', result.data);
+                  } else {
+                    console.log('Skipping upload due to null values');
+                  }
+    
+                } // upload interval check
+                catch (error) {
+                console.error('Error Recognizing:', error);
+              }            
+                this.lastRecognitionTime = currentTime;
+            } // upload interval check
+          } // recognition interval check
 
-                // Upload data
-                this.lastUploadTime = currentTime;
-                const result = await axios.post('http://localhost:8000/upload', formData);
-                console.log('Data uploaded:', result.data);
-              } else {
-                console.log('Skipping upload due to null values');
-              }
-
-            }
           } else {  //顔が検出されなかった場合
             // log for the 1st time only
             //console.log('No face detected'); 
@@ -300,6 +311,46 @@ export class FaceDetectionComponent implements OnInit {
         }, 'image/png');
       }
     });
+  }
+
+  // 現在認識している顔に対応する名前を更新するメソッド
+  async updateNameForCurrentFace(descriptor: Float32Array, oldName: string) {
+    //update-name apiで設定されている名前を取得
+    let data = '';
+    const response = await axios.get('http://localhost:8000/getupdatename')
+      .then(response => {
+        data = response.data.updatename;
+      })
+      .catch(error => {
+        console.error('There was an error!', error);
+        // エラー状態の管理追加
+        this.errorState = true;
+        this.errorMessage = error.message;
+        // UIへのエラー表示
+        // エラーリカバリー処理
+      });
+    // Update name
+    console.log('Updating name for current face:', data);
+    if (data != null && data.trim() !== 'NotYet') {
+      this.hasExactName = true;
+      this.updatename = data.trim();
+      try{
+        updateFace(descriptor, oldName, this.updatename);
+        this.recognizedname = this.updatename;
+      } catch (error) {
+        console.error('Error updating face:', error);
+      }
+      // Clear the update name
+      await axios.post('http://localhost:8000/clearupdatename')
+        .catch(error => {
+          console.error('Error clearing update name:', error);
+          // エラー状態の管理追加
+          this.errorState = true;
+          this.errorMessage = error.message;
+          // UIへのエラー表示
+          // エラーリカバリー処理
+        });
+    }
   }
 
   // アップロード間隔を設定するメソッド

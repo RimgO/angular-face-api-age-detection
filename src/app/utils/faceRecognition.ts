@@ -62,11 +62,11 @@ export const registerFace = (descriptor: Float32Array, name: string): void => {
   faceDataStore.push({ descriptor, name });
 };
 
-export const updateFace = (descriptor: Float32Array, oldName: string): boolean => {
+export const updateFace = (descriptor: Float32Array, oldName: string, newName: string): boolean => {
   const index = faceDataStore.findIndex(face => face.name === oldName);
   if (index === -1) return false;
   
-  faceDataStore.splice(index, 1); // Remove the old face data
+  faceDataStore[index] = { descriptor, name: newName }; // Update face data with new name
   return true;
 };
 
