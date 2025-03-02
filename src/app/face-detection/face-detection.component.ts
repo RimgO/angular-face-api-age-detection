@@ -246,7 +246,7 @@ export class FaceDetectionComponent implements OnInit {
                     formData.append('mood', this.mode_mood);
                     // Face recognition
                     formData.append('recognizestate', this.recognizestate?.toString());
-                    formData.append('recognizedname', this.recognizedname || 'Unknown');
+                    formData.append('recognizedname', this.recognizedname || 'unKnown');
     
                     // Upload data
                     this.lastUploadTime = currentTime;
@@ -335,6 +335,7 @@ export class FaceDetectionComponent implements OnInit {
       this.hasExactName = true;
       this.updatename = data.trim();
       try{
+        console.log('Updating face with name:', this.updatename);
         updateFace(descriptor, oldName, this.updatename);
         this.recognizedname = this.updatename;
       } catch (error) {
