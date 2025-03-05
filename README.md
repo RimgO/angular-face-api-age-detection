@@ -6,6 +6,22 @@ This project was generated with [Angular CLI](https://github.com/angular/angular
 
 Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
 
+## FastAPI Backend Server
+
+This project includes a Python FastAPI backend server in [src/server.py](src/server.py) to handle file uploads and data processing. The server provides the following endpoints:
+
+- **POST /upload/**: Uploads files with associated metadata including age, gender, mood, and face recognition data
+- **GET /data/**: Retrieves all uploaded data
+- **GET /file/**: Downloads files
+- **POST /update-name/**: Updates recognized name information
+
+To run the FastAPI server:
+
+```bash
+cd src
+python server.py
+```
+
 ## Code scaffolding
 
 Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.

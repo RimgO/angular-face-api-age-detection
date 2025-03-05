@@ -1,6 +1,8 @@
 import { Component, OnInit, ViewChild, ElementRef, NgZone } from '@angular/core';
 import { NgIf } from '@angular/common';
 import * as faceapi from 'face-api.js';
+// Import the environment
+import { environment } from '../../environments/environment';
 
 import { initializeFaceApi, detectFace, recognizeFace, registerFace, updateFace } from '../utils/faceRecognition';
 import { FaceData, RecognitionState } from '../../types/FaceData';
@@ -23,6 +25,12 @@ export class FaceDetectionComponent implements OnInit {
   @ViewChild('video', { static: true }) videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvas', { static: true }) canvasElement!: ElementRef<HTMLCanvasElement>;
 
+  // Initialize with value from environment
+  private serverPort: number = environment.serverPort;
+  private get serverUrl(): string {
+    return `http://localhost:${this.serverPort}`;
+  }
+
   age: number | null = null;
   mood: string | null = null;
   gender: string | null = null;
@@ -36,6 +44,8 @@ export class FaceDetectionComponent implements OnInit {
 
   private prevPosition: { x: number; y: number; } | null = null;
   private stillCounter = 0;
+
+  resultname: string | null = null;
 
   recognizestate : boolean | null = null;
   recognizedname: string | null = null;
@@ -53,11 +63,16 @@ export class FaceDetectionComponent implements OnInit {
   private errorState: boolean = false;
   private errorMessage: string = '';
 
+  private wasLastDetectionSuccessful = false;
+
   constructor(private ngZone: NgZone) { }
 
   async ngOnInit() {
     console.log('FaceDetectionComponent initialized');
     try {
+      // Check for environment variable port configuration
+      this.initializeServerPort();
+      
       //Face Recognitionの初期化
       await initializeFaceApi();
 
@@ -123,6 +138,7 @@ export class FaceDetectionComponent implements OnInit {
     this.median_age = null;
     this.mode_gender = null;
     this.mode_mood = null;
+    this.resultname = null;
     this.recognizestate = false;
     this.recognizedname = null;
     this.hasExactName = false;
@@ -139,6 +155,9 @@ export class FaceDetectionComponent implements OnInit {
           faceapi.draw.drawDetections(canvas, resizedDetections);
   
           if (resizedDetections.length > 0) {
+            // Set the flag to true when a face is detected
+            this.wasLastDetectionSuccessful = true;
+            
             const { age, gender, expressions } = resizedDetections[0];
   
             this.ngZone.run(() => {
@@ -221,6 +240,10 @@ export class FaceDetectionComponent implements OnInit {
                       }
                     } else { //顔が認識された場合
                       this.recognizestate = true;
+                      this.resultname = resultFace.name;
+                      if (!this.hasExactName){
+                        this.recognizedname = resultFace.name;
+                      }
                       console.log('Face Has ExactName?:', resultFace.name, this.hasExactName, this.recognizedname);
                       //暫定の名前が設定されていたら更新
                       if (resultFace.name != null){
@@ -233,40 +256,48 @@ export class FaceDetectionComponent implements OnInit {
                     }                    
                   } else {  //顔が認識されなかった場合
                     this.stillCounter = 0;
+                    this.resultname = null;
                     this.recognizestate = false;
                   }
                   if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate == true) {
-                  
-                    // Capture image and prepare data
-                    const imageBlob = await this.getVideoBlob(video);
-                    const formData = new FormData();
-                    formData.append('file', imageBlob, 'image.png');
-                    formData.append('age', this.median_age);
-                    formData.append('gender', this.mode_gender);
-                    formData.append('mood', this.mode_mood);
-                    // Face recognition
-                    formData.append('recognizestate', this.recognizestate?.toString());
-                    formData.append('recognizedname', this.recognizedname || 'unKnown');
-    
-                    // Upload data
-                    this.lastUploadTime = currentTime;
-                    const result = await axios.post('http://localhost:8000/upload', formData);
-                    console.log('Data uploaded:', result.data);
+                    try {
+                      // Capture image and prepare data
+                      const imageBlob = await this.getVideoBlob(video);
+                      const formData = new FormData();
+                      formData.append('file', imageBlob, 'image.png');
+                      formData.append('age', this.median_age);
+                      formData.append('gender', this.mode_gender);
+                      formData.append('mood', this.mode_mood);
+                      // Face recognition
+                      formData.append('recognizestate', this.recognizestate?.toString());
+                      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+      
+                      // Upload data
+                      this.lastUploadTime = currentTime;
+                      const result = await axios.post(`${this.serverUrl}/upload`, formData);
+                      console.log('Data uploaded:', result.data);
+                    } catch (error) {
+                      console.error('Error uploading data:', error);
+                    }
                   } else {
                     console.log('Skipping upload due to null values');
                   }
     
                 } // upload interval check
                 catch (error) {
-                console.error('Error Recognizing:', error);
-              }            
+                console.error('Error On Face Detecting:', error);
+                }            
                 this.lastRecognitionTime = currentTime;
-            } // upload interval check
-          } // recognition interval check
+              } // upload interval check
+            } // recognition interval check
 
           } else {  //顔が検出されなかった場合
-            // log for the 1st time only
-            //console.log('No face detected'); 
+            // log output for the 1st time only
+            if (this.wasLastDetectionSuccessful) {
+              console.log('No face detected - face was lost');
+              this.wasLastDetectionSuccessful = false;
+            }
+
             this.age = null;
             this.mood = null;
             this.gender = null;
@@ -280,7 +311,7 @@ export class FaceDetectionComponent implements OnInit {
             this.recognizedname = null;
           }
         } catch (error) {
-          console.error('Error uploading data:', error);
+          console.error('Error While Detecting:', error);
         }
       }, 500);
   
@@ -317,7 +348,7 @@ export class FaceDetectionComponent implements OnInit {
   async updateNameForCurrentFace(descriptor: Float32Array, oldName: string) {
     //update-name apiで設定されている名前を取得
     let data = '';
-    const response = await axios.get('http://localhost:8000/getupdatename')
+    const response = await axios.get(`${this.serverUrl}/getupdatename`)
       .then(response => {
         data = response.data.updatename;
       })
@@ -342,7 +373,7 @@ export class FaceDetectionComponent implements OnInit {
         console.error('Error updating face:', error);
       }
       // Clear the update name
-      await axios.post('http://localhost:8000/clearupdatename')
+      await axios.post(`${this.serverUrl}/clearupdatename`)
         .catch(error => {
           console.error('Error clearing update name:', error);
           // エラー状態の管理追加
@@ -356,7 +387,7 @@ export class FaceDetectionComponent implements OnInit {
 
   // アップロード間隔を設定するメソッド
   async setUploadInterval(seconds: number) {
-    const response = await fetch('http://localhost:8000/set-interval/', {
+    const response = await fetch(`${this.serverUrl}/set-interval/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -369,7 +400,7 @@ export class FaceDetectionComponent implements OnInit {
 
   // 顔認証の間隔を設定するメソッド
   async setRecognitionInterval(seconds: number) {
-    const response = await fetch('http://localhost:8000/set-recognition-interval/', {
+    const response = await fetch(`${this.serverUrl}/set-recognition-interval/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -379,4 +410,22 @@ export class FaceDetectionComponent implements OnInit {
     const data = await response.json();
     this.recognitionInterval = seconds * 1000;
   }  
+
+  // Initialize server port from environment variable
+  private initializeServerPort() {
+    try {
+      // Start with the environment value
+      this.serverPort = environment.serverPort;
+      
+      // Then try URL parameters for overrides (useful for testing)
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramPort = urlParams.get('serverPort');
+      if (paramPort && !isNaN(Number(paramPort))) {
+        this.serverPort = Number(paramPort);
+      }
+      console.log(`Using server port: ${this.serverPort}`);
+    } catch (error) {
+      console.log(`Using default server port: ${this.serverPort}`);
+    }
+  }
 }
