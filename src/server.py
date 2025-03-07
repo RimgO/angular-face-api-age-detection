@@ -10,9 +10,24 @@ app = FastAPI()
 uploaded_data = []
 setting_data = {}
 
+# Get port from environment variable or use default
+port = int(os.environ.get("PORT", 8888))
+
+# Define allowed origins based on port
+allowed_origins = [
+    "http://localhost:3000",  # aituberkit
+    f"http://localhost:{port}",
+    "http://localhost:4200",  # Default Angular dev server
+    f"http://localhost:{port}",
+]
+
+# Add any specific origins from environment
+if os.environ.get("ALLOWED_ORIGIN"):
+    allowed_origins.append(os.environ.get("ALLOWED_ORIGIN"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,4 +127,6 @@ async def clearupdatename():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8888)
+    print(f"Starting server on port {port}")
+    print(f"Allowed origins: {allowed_origins}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
