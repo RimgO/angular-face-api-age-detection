@@ -205,7 +205,10 @@ export class FaceDetectionComponent implements OnInit {
                       const dy = Math.abs(y - this.prevPosition.y);
               
                       if (dx < THRESHOLD_MOVEMENT && dy < THRESHOLD_MOVEMENT) {
-                          this.stillCounter++; // 動いてなければカウント
+                          //年齢がからでない場合のみカウント
+                          if(this.median_age !== null){
+                            this.stillCounter++; // 動いてなければカウント
+                          }
                       } else {
                           this.stillCounter = 0; // 動いていたらリセット
                       }
