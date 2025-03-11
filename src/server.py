@@ -94,7 +94,7 @@ async def get_file():
         filename=os.path.basename(file_path)
     )
 
-@app.post("/update-name/")
+@app.post("/updatename/")
 async def update_name(name: str = Form(...)):
     # 受け取ったnameをsetting_dataに追加する
     setting_data["updatename"] = name

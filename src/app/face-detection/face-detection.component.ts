@@ -11,7 +11,7 @@ import axios from 'axios';
 let faceDataStore: FaceData[] = [];
 const RECOGNITION_THRESHOLD = 0.6;
 const THRESHOLD_MOVEMENT = 50; // 位置変化の閾値(px)
-const THRESHOLD_STILL = 3; // 静止判定の閾値(回)
+const THRESHOLD_STILL = 2; // 静止判定の閾値(回)
 const BUFF_WINDOW_SIZE = 10; // バッファサイズ
 
 @Component({
@@ -130,19 +130,9 @@ export class FaceDetectionComponent implements OnInit {
     const canvas = this.canvasElement.nativeElement;
     const displaySize = { width: video.width, height: video.height };
     faceapi.matchDimensions(canvas, displaySize);
+    
+    this.resetInternalVariables();
   
-    //内部変数の初期化
-    this.age_buf = [];
-    this.gender_buf = [];
-    this.mood_buf = [];
-    this.median_age = null;
-    this.mode_gender = null;
-    this.mode_mood = null;
-    this.resultname = null;
-    this.recognizestate = false;
-    this.recognizedname = null;
-    this.hasExactName = false;
-
     this.ngZone.runOutsideAngular(() => {
       const intervalId = setInterval(async () => {
         try {
@@ -155,163 +145,9 @@ export class FaceDetectionComponent implements OnInit {
           faceapi.draw.drawDetections(canvas, resizedDetections);
   
           if (resizedDetections.length > 0) {
-            // Set the flag to true when a face is detected
-            this.wasLastDetectionSuccessful = true;
-            
-            const { age, gender, expressions } = resizedDetections[0];
-  
-            this.ngZone.run(() => {
-              this.age = Math.round(age);
-              this.gender = gender;
-              this.mood = this.getMaxExpression(expressions);
-              this.prevPosition = { x: resizedDetections[0].detection.box.x, y: resizedDetections[0].detection.box.y };
-              if(this.age!==null && this.age_buf){
-                this.age_buf.push(this.age);
-                //バッファが10個以上の場合、中央値を計算してバッファをシフト
-                if (this.age_buf.length >= BUFF_WINDOW_SIZE) { 
-                  this.median_age = this.getMediumOrMode(this.age_buf);
-                  this.age_buf.shift();
-                }
-              }
-              if(this.gender!==null && this.gender_buf){
-                this.gender_buf.push(this.gender);
-                //バッファが10個以上の場合、中央値を計算してバッファをシフト
-                if (this.gender_buf.length >= BUFF_WINDOW_SIZE) { 
-                  this.mode_gender = this.getMediumOrMode(this.gender_buf);
-                  this.gender_buf.shift();
-                }
-              }
-              if(this.mood!==null && this.mood_buf){
-                this.mood_buf.push(this.mood);
-                //バッファが10個以上の場合、中央値を計算してバッファをシフト
-                if (this.mood_buf.length >= BUFF_WINDOW_SIZE) { 
-                  this.mode_mood = this.getMediumOrMode(this.mood_buf);
-                  this.mood_buf.shift();
-                }  
-              }              
-            });
-  
-            const currentTime = Date.now();
-            if (currentTime - this.lastUploadTime >= this.uploadInterval) {
-              if (currentTime - this.lastRecognitionTime >= this.recognitionInterval) {
-                //face rcognition
-                try {
-                  const detection = await detectFace(video);
-
-                  if (detection) {
-                    const { x, y } = detection.detection.box;
-                    if (this.prevPosition) {
-                      const dx = Math.abs(x - this.prevPosition.x);
-                      const dy = Math.abs(y - this.prevPosition.y);
-              
-                      if (dx < THRESHOLD_MOVEMENT && dy < THRESHOLD_MOVEMENT) {
-                          //年齢がからでない場合のみカウント
-                          if(this.median_age !== null){
-                            this.stillCounter++; // 動いてなければカウント
-                          }
-                      } else {
-                          this.stillCounter = 0; // 動いていたらリセット
-                      }
-                    }
-                    this.prevPosition = { x, y };
-
-                    const resultFace = await recognizeFace(detection.descriptor);
-                    console.log('Recognition isKnownFace:', resultFace.isKnownFace,resultFace.name, resultFace.distance);
-                    if (!resultFace.isKnownFace || resultFace.name==undefined) { //顔が認識されたが名前が不明の場合
-                      this.recognizestate = false;
-                      //動かずに連続N回認識されたら登録
-                      if(this.stillCounter > THRESHOLD_STILL) {
-                        console.error('Count Full. Let me Register');
-                        try {
-                            const now = new Date(); // 現在の日時のDateオブジェクトを作成
-                            const yyyy = now.getFullYear();
-                            const mm = ('00' + (now.getMonth() + 1)).slice(-2);
-                            const dd = ('00' + now.getDate()).slice(-2);
-                            const hh = ('00' + now.getHours()).slice(-2);
-                            const mi = ('00' + now.getMinutes()).slice(-2);
-                            const ss = ('00' + now.getSeconds()).slice(-2);
-
-                            const newName = `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
-                            console.log('Registering face with name:', newName);
-                            registerFace(detection.descriptor, newName.trim());
-                            this.recognizedname = newName;  //暫定の名前を設定
-                            this.hasExactName = false;  //本当の名前は不明のためfalse
-                            this.recognizestate = true; //名前は知らないが顔は覚えた状態
-                        } catch (error) {
-                          console.error('Error On Recognizing:', error);
-                        }
-                      }
-                    } else { //顔が認識された場合
-                      this.recognizestate = true;
-                      this.resultname = resultFace.name;
-                      if (!this.hasExactName){
-                        this.recognizedname = resultFace.name;
-                      }
-                      console.log('Face Has ExactName?:', resultFace.name, this.hasExactName, this.recognizedname);
-                      //暫定の名前が設定されていたら更新
-                      if (resultFace.name != null){
-                        if(resultFace.name.endsWith('male')) {
-                          this.updateNameForCurrentFace(detection.descriptor, resultFace.name);
-                          //this.hasExactName = true;
-                          //this.updatename = this.updatename;
-                        }
-                      }
-                    }                    
-                  } else {  //顔が認識されなかった場合
-                    this.stillCounter = 0;
-                    this.resultname = null;
-                    this.recognizestate = false;
-                  }
-                  if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate == true) {
-                    try {
-                      // Capture image and prepare data
-                      const imageBlob = await this.getVideoBlob(video);
-                      const formData = new FormData();
-                      formData.append('file', imageBlob, 'image.png');
-                      formData.append('age', this.median_age);
-                      formData.append('gender', this.mode_gender);
-                      formData.append('mood', this.mode_mood);
-                      // Face recognition
-                      formData.append('recognizestate', this.recognizestate?.toString());
-                      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
-      
-                      // Upload data
-                      this.lastUploadTime = currentTime;
-                      const result = await axios.post(`${this.serverUrl}/upload`, formData);
-                      console.log('Data uploaded:', result.data);
-                    } catch (error) {
-                      console.error('Error uploading data:', error);
-                    }
-                  } else {
-                    console.log('Skipping upload due to null values');
-                  }
-    
-                } // upload interval check
-                catch (error) {
-                console.error('Error On Face Detecting:', error);
-                }            
-                this.lastRecognitionTime = currentTime;
-              } // upload interval check
-            } // recognition interval check
-
-          } else {  //顔が検出されなかった場合
-            // log output for the 1st time only
-            if (this.wasLastDetectionSuccessful) {
-              console.log('No face detected - face was lost');
-              this.wasLastDetectionSuccessful = false;
-            }
-
-            this.age = null;
-            this.mood = null;
-            this.gender = null;
-            this.age_buf = [];
-            this.gender_buf = [];
-            this.mood_buf = [];
-            this.median_age = null;
-            this.mode_gender = null;
-            this.mode_mood = null;
-            this.recognizestate = null;
-            this.recognizedname = null;
+            this.handleFaceDetection(resizedDetections, video);
+          } else {
+            this.handleNoFaceDetected();
           }
         } catch (error) {
           console.error('Error While Detecting:', error);
@@ -321,6 +157,245 @@ export class FaceDetectionComponent implements OnInit {
       // Cleanup on component destroy
       return () => clearInterval(intervalId);
     });
+  }
+
+  private resetInternalVariables() {
+    this.age_buf = [];
+    this.gender_buf = [];
+    this.mood_buf = [];
+    this.median_age = null;
+    this.mode_gender = null;
+    this.mode_mood = null;
+    this.resultname = null;
+    this.recognizestate = false;
+    this.recognizedname = null;
+    this.hasExactName = false;
+  }
+  
+  private handleFaceDetection(resizedDetections: any, video: HTMLVideoElement) {
+    // Set the flag to true when a face is detected
+    this.wasLastDetectionSuccessful = true;
+    
+    const { age, gender, expressions } = resizedDetections[0];
+    const currentTime = Date.now();
+  
+    this.ngZone.run(() => {
+      this.updateFaceAttributes(age, gender, expressions, resizedDetections[0]);
+    });
+  
+    // Check if it's time to perform face recognition and data upload
+    if (currentTime - this.lastUploadTime >= this.uploadInterval) {
+      if (currentTime - this.lastRecognitionTime >= this.recognitionInterval) {
+        this.performFaceRecognition(video, currentTime);
+      }
+    }
+  }
+  
+  private updateFaceAttributes(age: number, gender: string, expressions: any, detection: any) {
+    this.age = Math.round(age);
+    this.gender = gender;
+    this.mood = this.getMaxExpression(expressions);
+    this.prevPosition = { x: detection.detection.box.x, y: detection.detection.box.y };
+    
+    this.updateBufferedValues();
+  }
+  
+  private updateBufferedValues() {
+    if (this.age !== null && this.age_buf) {
+      this.age_buf.push(this.age);
+      if (this.age_buf.length >= BUFF_WINDOW_SIZE) { 
+        this.median_age = this.getMediumOrMode(this.age_buf);
+        this.age_buf.shift();
+      }
+    }
+    
+    if (this.gender !== null && this.gender_buf) {
+      this.gender_buf.push(this.gender);
+      if (this.gender_buf.length >= BUFF_WINDOW_SIZE) { 
+        this.mode_gender = this.getMediumOrMode(this.gender_buf);
+        this.gender_buf.shift();
+      }
+    }
+    
+    if (this.mood !== null && this.mood_buf) {
+      this.mood_buf.push(this.mood);
+      if (this.mood_buf.length >= BUFF_WINDOW_SIZE) { 
+        this.mode_mood = this.getMediumOrMode(this.mood_buf);
+        this.mood_buf.shift();
+      }
+    }
+  }
+  
+  private async performFaceRecognition(video: HTMLVideoElement, currentTime: number) {
+    try {
+      const detection = await detectFace(video);
+      
+      if (detection) {
+        await this.processDetectedFace(detection, currentTime);
+      } else {
+        this.handleNoFaceRecognized();
+      }
+      
+      this.lastRecognitionTime = currentTime;
+    } catch (error) {
+      console.error('Error On Face Detecting:', error);
+    }
+  }
+  
+  private async processDetectedFace(detection: any, currentTime: number) {
+    this.updateMovementTracking(detection);
+    
+    const resultFace = await recognizeFace(detection.descriptor);
+    console.log('Recognition isKnownFace:', resultFace.isKnownFace, resultFace.name, resultFace.distance);
+    
+    if (!resultFace.isKnownFace || resultFace.name === undefined) {
+      await this.handleUnknownFace(detection);
+    } else {
+      this.handleKnownFace(resultFace, detection);
+    }
+    await this.attemptDataUpload(detection, currentTime);
+  }
+  
+  private updateMovementTracking(detection: any) {
+    const { x, y } = detection.detection.box;
+    if (this.prevPosition) {
+      const dx = Math.abs(x - this.prevPosition.x);
+      const dy = Math.abs(y - this.prevPosition.y);
+  
+      if (dx < THRESHOLD_MOVEMENT && dy < THRESHOLD_MOVEMENT) {
+        if (this.median_age !== null) {
+          this.stillCounter++; // Increment if not moving
+        }
+      } else {
+        this.stillCounter = 0; // Reset if moving
+      }
+    }
+    this.prevPosition = { x, y };
+  }
+  
+  private async handleUnknownFace(detection: any) {
+    this.recognizestate = false;
+    
+    // Register face if still for N consecutive detections
+    if (this.stillCounter > THRESHOLD_STILL) {
+      console.error('Count Full. Let me Register');
+      try {
+        const newName = this.generateTimestampName();
+        console.log('Registering face with name:', newName);
+        registerFace(detection.descriptor, newName.trim());
+        this.recognizedname = newName;
+        this.hasExactName = false;
+        this.recognizestate = true;
+      } catch (error) {
+        console.error('Error On Recognizing:', error);
+      }
+    }
+  }
+  
+  private generateTimestampName(): string {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = ('00' + (now.getMonth() + 1)).slice(-2);
+    const dd = ('00' + now.getDate()).slice(-2);
+    const hh = ('00' + now.getHours()).slice(-2);
+    const mi = ('00' + now.getMinutes()).slice(-2);
+    const ss = ('00' + now.getSeconds()).slice(-2);
+  
+    return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
+  }
+  
+  private handleKnownFace(resultFace: any, detection: any) {
+    this.recognizestate = true;
+    this.resultname = resultFace.name;
+    
+    if (!this.hasExactName) {
+      this.recognizedname = resultFace.name;
+    }
+    
+    console.log('Face Has ExactName?:', resultFace.name, this.hasExactName, this.recognizedname);
+    
+    if (resultFace.name != null && resultFace.name.endsWith('male')) {
+      this.updateNameForCurrentFace(detection.descriptor, resultFace.name);
+    }
+  }
+  
+  private handleNoFaceRecognized() {
+    this.stillCounter = 0;
+    this.resultname = null;
+    this.recognizestate = false;
+  }
+  
+  private async attemptDataUpload(detection: any, currentTime: number) {
+    if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate !== false) {
+      try {
+        const imageBlob = await this.getVideoBlob(this.videoElement.nativeElement);
+        const formData = new FormData();
+        formData.append('file', imageBlob, 'image.png');
+        formData.append('age', this.median_age);
+        formData.append('gender', this.mode_gender);
+        formData.append('mood', this.mode_mood);
+        formData.append('recognizestate', this.recognizestate?.toString() || 'false');
+        formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+  
+        this.lastUploadTime = currentTime;
+        const result = await axios.post(`${this.serverUrl}/upload`, formData);
+        console.log('Data uploaded:', result.data);
+      } catch (error) {
+        console.error('Error uploading data:', error);
+      }
+    } else {
+      console.log('Skipping upload due to null values');
+    }
+  }
+  
+  private handleNoFaceDetected() {
+    const currentTime = Date.now();
+    
+    // Log output and attempt data upload only for the 1st time face is lost
+    if (this.wasLastDetectionSuccessful) {
+      console.log('No face detected - face was lost');
+      this.wasLastDetectionSuccessful = false;
+      
+      // Send null detection data once when face disappears
+      this.attemptDataUploadWhenFaceLost(currentTime);
+    }
+  
+    this.resetAllFaceData();
+  }
+  
+  // New method to handle data upload when face is lost
+  private async attemptDataUploadWhenFaceLost(currentTime: number) {
+    if (this.recognizestate === true) {
+      try {
+        const formData = new FormData();
+        formData.append('file', new Blob([''], { type: 'image/png' }), 'empty.png');
+        formData.append('age', this.median_age || '');
+        formData.append('gender', this.mode_gender || '');
+        formData.append('mood', this.mode_mood || '');
+        formData.append('recognizestate', 'false'); // Face is no longer present
+        formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+  
+        this.lastUploadTime = currentTime;
+        const result = await axios.post(`${this.serverUrl}/upload`, formData);
+        console.log('Face lost event uploaded:', result.data);
+      } catch (error) {
+        console.error('Error uploading face lost event:', error);
+      }
+    }
+  }
+  
+  private resetAllFaceData() {
+    this.age = null;
+    this.mood = null;
+    this.gender = null;
+    this.age_buf = [];
+    this.gender_buf = [];
+    this.mood_buf = [];
+    this.median_age = null;
+    this.mode_gender = null;
+    this.mode_mood = null;
+    this.recognizestate = null;
+    this.recognizedname = null;
   }
 
   getMaxExpression(expressions: faceapi.FaceExpressions): string {
