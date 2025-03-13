@@ -35,22 +35,36 @@ app.add_middleware(
 
 @app.post("/upload/")
 async def upload_file(
-    file: UploadFile = File(...), 
-    age: int = Form(...), 
+    file: UploadFile = None,  # Make file optional
+    age: str = Form(...),  # Changed from int to str for flexibility
     gender: str = Form(...), 
     mood: str = Form(...), 
-    recognizestate: bool = Form(...), 
+    recognizestate: str = Form(...),  # Changed from bool to str
     recognizedname: str = Form(...)):
     try:
-        file_location = f"uploads/{file.filename}"
-        os.makedirs(os.path.dirname(file_location), exist_ok=True)
+        file_location = None
+        # Only process file if it exists
+        if file:
+            file_location = f"uploads/{file.filename}"
+            os.makedirs(os.path.dirname(file_location), exist_ok=True)
 
-        with open(file_location, "wb+") as file_object:
-            shutil.copyfileobj(file.file, file_object)
+            with open(file_location, "wb+") as file_object:
+                shutil.copyfileobj(file.file, file_object)
 
-        data = {"age": age, "gender": gender, "mood": mood, "recognizestate": recognizestate, "recognizedname": recognizedname, "file_location": file_location}
+        # Create data dict with or without file_location
+        data = {
+            "age": age, 
+            "gender": gender, 
+            "mood": mood, 
+            "recognizestate": recognizestate, 
+            "recognizedname": recognizedname
+        }
+        
+        # Add file_location only if a file was uploaded
+        if file_location:
+            data["file_location"] = file_location
+        
         uploaded_data.append(data)
-
         return JSONResponse(content=data)
 
     except Exception as e:

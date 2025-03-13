@@ -365,23 +365,21 @@ export class FaceDetectionComponent implements OnInit {
   
   // New method to handle data upload when face is lost
   private async attemptDataUploadWhenFaceLost(currentTime: number) {
-    if (this.recognizestate === true) {
-      try {
-        const formData = new FormData();
-        formData.append('file', new Blob([''], { type: 'image/png' }), 'empty.png');
-        formData.append('age', this.median_age || '');
-        formData.append('gender', this.mode_gender || '');
-        formData.append('mood', this.mode_mood || '');
-        formData.append('recognizestate', 'false'); // Face is no longer present
-        formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
-  
-        this.lastUploadTime = currentTime;
-        const result = await axios.post(`${this.serverUrl}/upload`, formData);
-        console.log('Face lost event uploaded:', result.data);
-      } catch (error) {
-        console.error('Error uploading face lost event:', error);
-      }
-    }
+    try {
+      //const imageBlob = await this.getVideoBlob(this.videoElement.nativeElement);
+      const formData = new FormData();
+      formData.append('age', this.median_age || ''),
+      formData.append('gender', this.mode_gender || ''),
+      formData.append('mood', this.mode_mood || ''),
+      formData.append('recognizestate', 'lost'),
+      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown')
+
+      this.lastUploadTime = currentTime;
+      const result = await axios.post(`${this.serverUrl}/upload`, formData);
+      console.log('Data uploaded:', result.data);
+    } catch (error) {
+      console.error('Error uploading data:', error);
+    }    
   }
   
   private resetAllFaceData() {
@@ -421,6 +419,7 @@ export class FaceDetectionComponent implements OnInit {
       }
     });
   }
+
 
   // 現在認識している顔に対応する名前を更新するメソッド
   async updateNameForCurrentFace(descriptor: Float32Array, oldName: string) {
