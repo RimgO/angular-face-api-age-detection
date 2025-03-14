@@ -73,7 +73,7 @@ export class FaceDetectionComponent implements OnInit {
       // Check for environment variable port configuration
       this.initializeServerPort();
       
-      //Face Recognitionの初期化
+      // Face Recognitionの初期化
       await initializeFaceApi();
 
       await this.loadModels();
@@ -84,8 +84,20 @@ export class FaceDetectionComponent implements OnInit {
       console.log('Detection started');
 
       this.uploadInterval = 1 * 1000; // 秒からミリ秒に変換
+
+      // Add visibility change event listener
+      document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
     } catch (error) {
       console.error('Error in ngOnInit:', error);
+    }
+  }
+
+  // Method to handle visibility change
+  private async handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      console.log('Page is visible again, restarting detection');
+      await this.startVideo();
+      this.detect();
     }
   }
 
