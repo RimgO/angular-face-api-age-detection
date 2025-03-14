@@ -79,18 +79,23 @@ async def get_data():
             content={"message": "No data available"},
             status_code=404
         )
-    
+
     latest_data = uploaded_data[-1]
-    return JSONResponse(
-        content={
-            "age": latest_data["age"],
-            "gender": latest_data["gender"],
-            "mood": latest_data["mood"],
-            "recognizestate": latest_data["recognizestate"],
-            "recognizedname": latest_data["recognizedname"],
-            "file": latest_data["file_location"]
-        }
-    )
+    response_data = {
+        "age": latest_data["age"],
+        "gender": latest_data["gender"],
+        "mood": latest_data["mood"],
+        "recognizestate": latest_data["recognizestate"],
+        "recognizedname": latest_data["recognizedname"],
+    }
+    
+    # ファイルが存在する場合のみfile_locationを追加
+    if "file_location" in latest_data:
+        response_data["file"] = latest_data["file_location"]
+    else:
+        response_data["file"] = None  # または適切な代替値を設定
+    
+    return JSONResponse(content=response_data)
 
 @app.get("/file/")
 async def get_file():
