@@ -1,8 +1,29 @@
 import * as faceapi from 'face-api.js';
 import { FaceData, RecognitionState } from '../../types/FaceData';
 
+// Constants used across the application
+export const FACE_CONSTANTS = {
+  RECOGNITION: {
+    THRESHOLD: 0.6,
+  },
+  MOVEMENT: {
+    THRESHOLD: 50,          // 位置変化の閾値(px)
+    STILL_COUNT: 2,         // 静止判定の閾値(回)
+  },
+  BUFFER: {
+    WINDOW_SIZE: 10,        // バッファサイズ
+  },
+  INTERVALS: {
+    DETECTION: 500,         // 顔検出の間隔(ms)
+    DEFAULT_UPLOAD: 1000,   // デフォルトのアップロード間隔(ms)
+    DEFAULT_RECOGNITION: 10000, // デフォルトの認識間隔(ms)
+  },
+  STORAGE: {
+    RECOGNIZED_FACES: 'recognizedFaces'
+  }
+};
+
 let faceDataStore: FaceData[] = [];
-const RECOGNITION_THRESHOLD = 0.6;
 
 // Add function to initialize faceDataStore
 export const initializeFaceDataStore = (faces: FaceData[]) => {
@@ -63,7 +84,7 @@ export const recognizeFace = async (descriptor: Float32Array): Promise<Recogniti
     }
   }
 
-  if (minDistance < RECOGNITION_THRESHOLD && matchedName) {
+  if (minDistance < FACE_CONSTANTS.RECOGNITION.THRESHOLD && matchedName) {
     return {
       isKnownFace: true,
       name: matchedName,

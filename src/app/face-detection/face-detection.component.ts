@@ -4,15 +4,14 @@ import * as faceapi from 'face-api.js';
 // Import the environment
 import { environment } from '../../environments/environment';
 
-import { initializeFaceApi, detectFace, recognizeFace, registerFace, updateFace, getFaceDataStore, initializeFaceDataStore } from '../utils/faceRecognition';
+import { initializeFaceApi, detectFace, recognizeFace, registerFace, updateFace, getFaceDataStore, initializeFaceDataStore, FACE_CONSTANTS } from '../utils/faceRecognition';
 import { FaceData, RecognitionState } from '../../types/FaceData';
 import axios from 'axios';
 
-let faceDataStore: FaceData[] = [];
+// Global constants and store
 const RECOGNITION_THRESHOLD = 0.6;
-const THRESHOLD_MOVEMENT = 50; // 位置変化の閾値(px)
-const THRESHOLD_STILL = 2; // 静止判定の閾値(回)
-const BUFF_WINDOW_SIZE = 10; // バッファサイズ
+
+let faceDataStore: FaceData[] = [];
 
 @Component({
   selector: 'app-face-detection',
@@ -39,7 +38,7 @@ export class FaceDetectionComponent implements OnInit {
   mood_buf: Array<string>  | null = null;
   gender_buf: Array<string>  | null = null;
 
-  private uploadInterval: number = 1000; // ミリ秒単位
+  private uploadInterval: number = FACE_CONSTANTS.INTERVALS.DEFAULT_UPLOAD;
   private lastUploadTime: number = 0;
 
   private prevPosition: { x: number; y: number; } | null = null;
@@ -51,7 +50,7 @@ export class FaceDetectionComponent implements OnInit {
   recognizedname: string | null = null;
   updatename: string | null = null;
 
-  private recognitionInterval: number = 10000; // ミリ秒単位
+  private recognitionInterval: number = FACE_CONSTANTS.INTERVALS.DEFAULT_RECOGNITION;
   private lastRecognitionTime: number = 0;
 
   private hasExactName: boolean = false;
@@ -65,7 +64,7 @@ export class FaceDetectionComponent implements OnInit {
 
   private wasLastDetectionSuccessful = false;
 
-  private readonly STORAGE_KEY = 'recognizedFaces';
+  private readonly STORAGE_KEY = FACE_CONSTANTS.STORAGE.RECOGNIZED_FACES;
 
   constructor(private ngZone: NgZone) { }
 
@@ -213,7 +212,7 @@ export class FaceDetectionComponent implements OnInit {
         } catch (error) {
           console.error('Error While Detecting:', error);
         }
-      }, 500);
+      }, FACE_CONSTANTS.INTERVALS.DETECTION);
   
       // Cleanup on component destroy
       return () => clearInterval(intervalId);
@@ -264,7 +263,7 @@ export class FaceDetectionComponent implements OnInit {
   private updateBufferedValues() {
     if (this.age !== null && this.age_buf) {
       this.age_buf.push(this.age);
-      if (this.age_buf.length >= BUFF_WINDOW_SIZE) { 
+      if (this.age_buf.length >= FACE_CONSTANTS.BUFFER.WINDOW_SIZE) { 
         this.median_age = this.getMediumOrMode(this.age_buf);
         this.age_buf.shift();
       }
@@ -272,7 +271,7 @@ export class FaceDetectionComponent implements OnInit {
     
     if (this.gender !== null && this.gender_buf) {
       this.gender_buf.push(this.gender);
-      if (this.gender_buf.length >= BUFF_WINDOW_SIZE) { 
+      if (this.gender_buf.length >= FACE_CONSTANTS.BUFFER.WINDOW_SIZE) { 
         this.mode_gender = this.getMediumOrMode(this.gender_buf);
         this.gender_buf.shift();
       }
@@ -280,7 +279,7 @@ export class FaceDetectionComponent implements OnInit {
     
     if (this.mood !== null && this.mood_buf) {
       this.mood_buf.push(this.mood);
-      if (this.mood_buf.length >= BUFF_WINDOW_SIZE) { 
+      if (this.mood_buf.length >= FACE_CONSTANTS.BUFFER.WINDOW_SIZE) { 
         this.mode_mood = this.getMediumOrMode(this.mood_buf);
         this.mood_buf.shift();
       }
@@ -323,7 +322,7 @@ export class FaceDetectionComponent implements OnInit {
       const dx = Math.abs(x - this.prevPosition.x);
       const dy = Math.abs(y - this.prevPosition.y);
   
-      if (dx < THRESHOLD_MOVEMENT && dy < THRESHOLD_MOVEMENT) {
+      if (dx < FACE_CONSTANTS.MOVEMENT.THRESHOLD && dy < FACE_CONSTANTS.MOVEMENT.THRESHOLD) {
         if (this.median_age !== null) {
           this.stillCounter++; // Increment if not moving
         }
@@ -337,7 +336,7 @@ export class FaceDetectionComponent implements OnInit {
   private async handleUnknownFace(detection: any) {
     this.recognizestate = false;
     
-    if (this.stillCounter > THRESHOLD_STILL) {
+    if (this.stillCounter > FACE_CONSTANTS.MOVEMENT.STILL_COUNT) {
       try {
         const newName = this.generateTimestampName();
         console.log('Registering face with name:', newName);
@@ -495,7 +494,7 @@ export class FaceDetectionComponent implements OnInit {
     const mi = ('00' + now.getMinutes()).slice(-2);
     const ss = ('00' + now.getSeconds()).slice(-2);
   
-    return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
+    return `${yyyy}${mm}${dd}_${hh}${mi}_${ss}_${this.median_age}_${this.mode_gender}`;
   }
 
   // 現在認識している顔に対応する名前を更新するメソッド
