@@ -154,10 +154,19 @@ export class FaceDetectionComponent implements OnInit {
   
           const resizedDetections = faceapi.resizeResults(detections, displaySize);
           canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-          faceapi.draw.drawDetections(canvas, resizedDetections);
-  
+
+          // 複数の顔が検出された場合、最大のバウンディングボックスを持つ顔を選択
           if (resizedDetections.length > 0) {
-            this.handleFaceDetection(resizedDetections, video);
+            const largestFace = resizedDetections.reduce((prev, current) => {
+              const prevArea = prev.detection.box.width * prev.detection.box.height;
+              const currentArea = current.detection.box.width * current.detection.box.height;
+              return prevArea > currentArea ? prev : current;
+            });
+
+            // 最大の顔のみを描画
+            faceapi.draw.drawDetections(canvas, [largestFace]);
+  
+            this.handleFaceDetection([largestFace], video);
           } else {
             this.handleNoFaceDetected();
           }
