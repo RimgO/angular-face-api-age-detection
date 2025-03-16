@@ -127,7 +127,7 @@ export class FaceDetectionComponent implements OnInit {
   // Clear all saved faces
   public clearSavedFaces() {
     localStorage.removeItem(this.STORAGE_KEY);
-    faceDataStore = [];
+    initializeFaceDataStore([]);  // Initialize with empty array
     console.log('Cleared all saved faces');
   }
 
@@ -308,7 +308,7 @@ export class FaceDetectionComponent implements OnInit {
     const resultFace = await recognizeFace(detection.descriptor);
     console.log('Recognition isKnownFace:', resultFace.isKnownFace, resultFace.name, resultFace.distance);
     
-    if (!resultFace.isKnownFace || resultFace.name === undefined) {
+    if (!resultFace.isKnownFace && resultFace.name === undefined) {
       await this.handleUnknownFace(detection);
     } else {
       this.handleKnownFace(resultFace, detection);
@@ -346,7 +346,7 @@ export class FaceDetectionComponent implements OnInit {
         this.hasExactName = false;
         this.recognizestate = true;
         this.saveFaces();
-        console.log('Updated faceDataStore:', faceDataStore);
+        console.log('Updated faceDataStore:', newName, faceDataStore);
       } catch (error) {
         console.error('Error On Recognizing:', error);
       }
@@ -363,9 +363,11 @@ export class FaceDetectionComponent implements OnInit {
     
     console.log('Face Has ExactName?:', resultFace.name, this.hasExactName, this.recognizedname);
     
+    /*
     if (resultFace.name != null && resultFace.name.endsWith('male')) {
       this.updateNameForCurrentFace(detection.descriptor, resultFace.name);
     }
+    */
   }
   
   private handleNoFaceRecognized() {
@@ -421,8 +423,8 @@ export class FaceDetectionComponent implements OnInit {
         formData.append('mood', this.mode_mood);
       }
       
-      formData.append('recognizestate', 'lost');
-      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+      formData.append('recognizestate', 'false');
+      formData.append('recognizedname', 'lost');
 
       this.lastUploadTime = currentTime;
       const result = await axios.post(`${this.serverUrl}/upload`, formData);
@@ -494,7 +496,7 @@ export class FaceDetectionComponent implements OnInit {
     const mi = ('00' + now.getMinutes()).slice(-2);
     const ss = ('00' + now.getSeconds()).slice(-2);
   
-    return `${yyyy}${mm}${dd}_${hh}${mi}_${ss}_${this.median_age}_${this.mode_gender}`;
+    return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
   }
 
   // 現在認識している顔に対応する名前を更新するメソッド
