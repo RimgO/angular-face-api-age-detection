@@ -4,7 +4,7 @@ import * as faceapi from 'face-api.js';
 // Import the environment
 import { environment } from '../../environments/environment';
 
-import { initializeFaceApi, detectFace, recognizeFace, registerFace, updateFace } from '../utils/faceRecognition';
+import { initializeFaceApi, detectFace, recognizeFace, registerFace, updateFace, getFaceDataStore, initializeFaceDataStore } from '../utils/faceRecognition';
 import { FaceData, RecognitionState } from '../../types/FaceData';
 import axios from 'axios';
 
@@ -65,11 +65,16 @@ export class FaceDetectionComponent implements OnInit {
 
   private wasLastDetectionSuccessful = false;
 
+  private readonly STORAGE_KEY = 'recognizedFaces';
+
   constructor(private ngZone: NgZone) { }
 
   async ngOnInit() {
     console.log('FaceDetectionComponent initialized');
     try {
+      // Load saved faces from localStorage
+      this.loadSavedFaces();
+      
       // Check for environment variable port configuration
       this.initializeServerPort();
       
@@ -90,6 +95,41 @@ export class FaceDetectionComponent implements OnInit {
     } catch (error) {
       console.error('Error in ngOnInit:', error);
     }
+  }
+
+  // Load saved faces from localStorage
+  private loadSavedFaces() {
+    const savedFaces = localStorage.getItem(this.STORAGE_KEY);
+    if (savedFaces) {
+      try {
+        const parsedFaces = JSON.parse(savedFaces);
+        // Initialize the global faceDataStore
+        initializeFaceDataStore(parsedFaces);
+        console.log('Loaded saved faces:', getFaceDataStore());
+      } catch (error) {
+        console.error('Error loading saved faces:', error);
+        // If there's an error, clear the corrupted data
+        this.clearSavedFaces();
+      }
+    }
+  }
+
+  // Save faces to localStorage
+  private saveFaces() {
+    try {
+      const currentFaces = getFaceDataStore();
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(currentFaces));
+      console.log('Saved faces to localStorage:', currentFaces);
+    } catch (error) {
+      console.error('Error saving faces:', error);
+    }
+  }
+
+  // Clear all saved faces
+  public clearSavedFaces() {
+    localStorage.removeItem(this.STORAGE_KEY);
+    faceDataStore = [];
+    console.log('Cleared all saved faces');
   }
 
   // Method to handle visibility change
@@ -297,32 +337,21 @@ export class FaceDetectionComponent implements OnInit {
   private async handleUnknownFace(detection: any) {
     this.recognizestate = false;
     
-    // Register face if still for N consecutive detections
     if (this.stillCounter > THRESHOLD_STILL) {
-      console.error('Count Full. Let me Register');
       try {
         const newName = this.generateTimestampName();
         console.log('Registering face with name:', newName);
-        registerFace(detection.descriptor, newName.trim());
+        const registeredFace = registerFace(detection.descriptor, newName.trim());
+        faceDataStore = getFaceDataStore(); // Update local store
         this.recognizedname = newName;
         this.hasExactName = false;
         this.recognizestate = true;
+        this.saveFaces();
+        console.log('Updated faceDataStore:', faceDataStore);
       } catch (error) {
         console.error('Error On Recognizing:', error);
       }
     }
-  }
-  
-  private generateTimestampName(): string {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = ('00' + (now.getMonth() + 1)).slice(-2);
-    const dd = ('00' + now.getDate()).slice(-2);
-    const hh = ('00' + now.getHours()).slice(-2);
-    const mi = ('00' + now.getMinutes()).slice(-2);
-    const ss = ('00' + now.getSeconds()).slice(-2);
-  
-    return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
   }
   
   private handleKnownFace(resultFace: any, detection: any) {
@@ -347,17 +376,26 @@ export class FaceDetectionComponent implements OnInit {
   }
   
   private async attemptDataUpload(detection: any, currentTime: number) {
-    if (this.age !== null && this.mood !== null && this.gender !== null && this.recognizestate !== false) {
+    if (this.recognizestate !== false) {
       try {
         const imageBlob = await this.getVideoBlob(this.videoElement.nativeElement);
         const formData = new FormData();
         formData.append('file', imageBlob, 'image.png');
-        formData.append('age', this.median_age);
-        formData.append('gender', this.mode_gender);
-        formData.append('mood', this.mode_mood);
+        
+        // Only append values if they are not null
+        if (this.median_age !== null) {
+          formData.append('age', this.median_age);
+        }
+        if (this.mode_gender !== null) {
+          formData.append('gender', this.mode_gender);
+        }
+        if (this.mode_mood !== null) {
+          formData.append('mood', this.mode_mood);
+        }
+        
         formData.append('recognizestate', this.recognizestate?.toString() || 'false');
         formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
-  
+
         this.lastUploadTime = currentTime;
         const result = await axios.post(`${this.serverUrl}/upload`, formData);
         console.log('Data uploaded:', result.data);
@@ -365,8 +403,34 @@ export class FaceDetectionComponent implements OnInit {
         console.error('Error uploading data:', error);
       }
     } else {
-      console.log('Skipping upload due to null values');
+      console.log('Skipping upload due to recognition state');
     }
+  }
+  
+  private async attemptDataUploadWhenFaceLost(currentTime: number) {
+    try {
+      const formData = new FormData();
+      
+      // Only append values if they are not null
+      if (this.median_age !== null) {
+        formData.append('age', this.median_age);
+      }
+      if (this.mode_gender !== null) {
+        formData.append('gender', this.mode_gender);
+      }
+      if (this.mode_mood !== null) {
+        formData.append('mood', this.mode_mood);
+      }
+      
+      formData.append('recognizestate', 'lost');
+      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+
+      this.lastUploadTime = currentTime;
+      const result = await axios.post(`${this.serverUrl}/upload`, formData);
+      console.log('Data uploaded:', result.data);
+    } catch (error) {
+      console.error('Error uploading data:', error);
+    }    
   }
   
   private handleNoFaceDetected() {
@@ -382,25 +446,6 @@ export class FaceDetectionComponent implements OnInit {
     }
   
     this.resetAllFaceData();
-  }
-  
-  // New method to handle data upload when face is lost
-  private async attemptDataUploadWhenFaceLost(currentTime: number) {
-    try {
-      //const imageBlob = await this.getVideoBlob(this.videoElement.nativeElement);
-      const formData = new FormData();
-      formData.append('age', this.median_age || ''),
-      formData.append('gender', this.mode_gender || ''),
-      formData.append('mood', this.mode_mood || ''),
-      formData.append('recognizestate', 'lost'),
-      formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown')
-
-      this.lastUploadTime = currentTime;
-      const result = await axios.post(`${this.serverUrl}/upload`, formData);
-      console.log('Data uploaded:', result.data);
-    } catch (error) {
-      console.error('Error uploading data:', error);
-    }    
   }
   
   private resetAllFaceData() {
@@ -441,6 +486,17 @@ export class FaceDetectionComponent implements OnInit {
     });
   }
 
+  private generateTimestampName(): string {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = ('00' + (now.getMonth() + 1)).slice(-2);
+    const dd = ('00' + now.getDate()).slice(-2);
+    const hh = ('00' + now.getHours()).slice(-2);
+    const mi = ('00' + now.getMinutes()).slice(-2);
+    const ss = ('00' + now.getSeconds()).slice(-2);
+  
+    return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
+  }
 
   // 現在認識している顔に対応する名前を更新するメソッド
   async updateNameForCurrentFace(descriptor: Float32Array, oldName: string) {
@@ -463,10 +519,13 @@ export class FaceDetectionComponent implements OnInit {
     if (data != null && data.trim() !== 'NotYet') {
       this.hasExactName = true;
       this.updatename = data.trim();
-      try{
+      try {
         console.log('Updating face with name:', this.updatename);
-        updateFace(descriptor, oldName, this.updatename);
+        const updatedFace = updateFace(descriptor, oldName, this.updatename);
+        faceDataStore = getFaceDataStore(); // Update local store
         this.recognizedname = this.updatename;
+        this.saveFaces();
+        console.log('Updated faceDataStore:', faceDataStore);
       } catch (error) {
         console.error('Error updating face:', error);
       }

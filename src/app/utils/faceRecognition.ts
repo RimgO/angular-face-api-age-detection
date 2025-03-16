@@ -4,6 +4,14 @@ import { FaceData, RecognitionState } from '../../types/FaceData';
 let faceDataStore: FaceData[] = [];
 const RECOGNITION_THRESHOLD = 0.6;
 
+// Add function to initialize faceDataStore
+export const initializeFaceDataStore = (faces: FaceData[]) => {
+  faceDataStore = faces.map(face => ({
+    ...face,
+    descriptor: new Float32Array(Object.values(face.descriptor)) // Convert object to Float32Array
+  }));
+};
+
 export const initializeFaceApi = async () => {
   try {
     await Promise.all([
@@ -34,14 +42,28 @@ export const recognizeFace = async (descriptor: Float32Array): Promise<Recogniti
   let matchedName: string | undefined;
 
   for (const faceData of faceDataStore) {
-    const distance = faceapi.euclideanDistance(descriptor, faceData.descriptor);
-    if (distance < minDistance) {
-      minDistance = distance;
-      matchedName = faceData.name;
+    // Ensure both descriptors are Float32Array and have the same length
+    if (faceData.descriptor.length !== descriptor.length) {
+      console.error('Descriptor length mismatch:', faceData.descriptor.length, descriptor.length);
+      continue;
+    }
+
+    try {
+      const distance = faceapi.euclideanDistance(
+        Array.from(descriptor), 
+        Array.from(faceData.descriptor)
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        matchedName = faceData.name;
+      }
+    } catch (error) {
+      console.error('Error calculating distance:', error);
+      continue;
     }
   }
 
-  if (minDistance < RECOGNITION_THRESHOLD) {
+  if (minDistance < RECOGNITION_THRESHOLD && matchedName) {
     return {
       isKnownFace: true,
       name: matchedName,
@@ -50,25 +72,36 @@ export const recognizeFace = async (descriptor: Float32Array): Promise<Recogniti
   }
 
   return {
-    isKnownFace: true,
+    isKnownFace: false,
     distance: minDistance
   };
 };
 
-export const registerFace = (descriptor: Float32Array, name: string): void => {
-  // Remove any existing face data with the same name
-  faceDataStore = faceDataStore.filter(face => face.name !== name);
-  // Add the new face data
-  faceDataStore.push({ descriptor, name });
-};
+export function registerFace(descriptor: Float32Array, name: string): FaceData {
+  const newFace: FaceData = {
+    descriptor: new Float32Array(Array.from(descriptor)), // Ensure clean copy
+    name: name
+  };
+  faceDataStore.push(newFace);
+  return newFace;
+}
 
-export const updateFace = (descriptor: Float32Array, oldName: string, newName: string): boolean => {
+export function updateFace(descriptor: Float32Array, oldName: string, newName: string): FaceData {
   const index = faceDataStore.findIndex(face => face.name === oldName);
-  if (index === -1) return false;
-  
-  faceDataStore[index] = { descriptor, name: newName }; // Update face data with new name
-  return true;
-};
+  if (index !== -1) {
+    const updatedFace: FaceData = {
+      descriptor: new Float32Array(Array.from(descriptor)), // Ensure clean copy
+      name: newName
+    };
+    faceDataStore[index] = updatedFace;
+    return updatedFace;
+  }
+  throw new Error('Face not found');
+}
+
+export function getFaceDataStore(): FaceData[] {
+  return faceDataStore;
+}
 
 export const getFaceByName = (name: string): FaceData | undefined => {
   return faceDataStore.find(face => face.name === name);
