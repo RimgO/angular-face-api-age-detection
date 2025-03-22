@@ -42,7 +42,7 @@ export class FaceDetectionComponent implements OnInit {
   private lastUploadTime: number = 0;
 
   private prevPosition: { x: number; y: number; } | null = null;
-  private stillCounter = 0;
+  private stayCounter = 0;
 
   resultname: string | null = null;
 
@@ -142,9 +142,40 @@ export class FaceDetectionComponent implements OnInit {
 
   async loadModels() {
     const MODEL_URL = '/assets/models/';
-    await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
-    await faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL);
+    const modelNames = ['ssd_mobilenetv1_model', 'face_expression_model', 'age_gender_model'];
+    
+    try {
+      // Check if models are already downloaded
+      const checkLocalModel = async (modelName: string) => {
+        try {
+          const response = await fetch(`${MODEL_URL}${modelName}-weights_manifest.json`);
+          return response.ok;
+        } catch {
+          return false;
+        }
+      };
+
+      // Load each model
+      const loadModelPromises = [
+        { check: () => checkLocalModel('ssd_mobilenetv1_model'), load: () => faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL) },
+        { check: () => checkLocalModel('face_expression_model'), load: () => faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL) },
+        { check: () => checkLocalModel('age_gender_model'), load: () => faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL) }
+      ];
+
+      for (const model of loadModelPromises) {
+        const isLocal = await model.check();
+        if (isLocal) {
+          console.log('Loading model from local storage');
+          await model.load();
+        } else {
+          console.log('Downloading model from remote');
+          await model.load();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading models:', error);
+      throw error;
+    }
   }
 
   startVideo() {
@@ -324,10 +355,10 @@ export class FaceDetectionComponent implements OnInit {
   
       if (dx < FACE_CONSTANTS.MOVEMENT.THRESHOLD && dy < FACE_CONSTANTS.MOVEMENT.THRESHOLD) {
         if (this.median_age !== null) {
-          this.stillCounter++; // Increment if not moving
+          this.stayCounter++; // Increment if not moving
         }
       } else {
-        this.stillCounter = 0; // Reset if moving
+        this.stayCounter = 0; // Reset if moving
       }
     }
     this.prevPosition = { x, y };
@@ -336,7 +367,7 @@ export class FaceDetectionComponent implements OnInit {
   private async handleUnknownFace(detection: any) {
     this.recognizestate = false;
     
-    if (this.stillCounter > FACE_CONSTANTS.MOVEMENT.STILL_COUNT) {
+    if (this.stayCounter > FACE_CONSTANTS.MOVEMENT.STILL_COUNT) {
       try {
         const newName = this.generateTimestampName();
         console.log('Registering face with name:', newName);
@@ -371,7 +402,7 @@ export class FaceDetectionComponent implements OnInit {
   }
   
   private handleNoFaceRecognized() {
-    this.stillCounter = 0;
+    this.stayCounter = 0;
     this.resultname = null;
     this.recognizestate = false;
   }
