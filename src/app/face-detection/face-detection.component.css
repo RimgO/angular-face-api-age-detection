@@ -64,3 +64,12 @@ canvas {
   border-radius: 10px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
+
+.no-wrap {
+  white-space: nowrap;
+}
+
+.info-item .label, 
+.info-item .value {
+  display: inline-block;
+}

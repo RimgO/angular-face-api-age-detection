@@ -58,6 +58,8 @@ export class FaceDetectionComponent implements OnInit {
   median_age: any;
   mode_gender: any;
   mode_mood: any;
+  
+  prev_resultname: string | null = null;
 
   private errorState: boolean = false;
   private errorMessage: string = '';
@@ -65,6 +67,10 @@ export class FaceDetectionComponent implements OnInit {
   private wasLastDetectionSuccessful = false;
 
   private readonly STORAGE_KEY = FACE_CONSTANTS.STORAGE.RECOGNIZED_FACES;
+
+  personRecognizeState: string = 'Not detected';
+  faceRecognizeState: string = 'false';
+  bodyRecognizeState: string = 'false';
 
   constructor(private ngZone: NgZone) { }
 
@@ -274,6 +280,9 @@ export class FaceDetectionComponent implements OnInit {
       this.updateFaceAttributes(age, gender, expressions, resizedDetections[0]);
     });
   
+    this.faceRecognizeState = 'true';
+    this.updatePersonRecognizeState();
+
     // Check if it's time to perform face recognition and data upload
     if (currentTime - this.lastUploadTime >= this.uploadInterval) {
       if (currentTime - this.lastRecognitionTime >= this.recognitionInterval) {
@@ -354,7 +363,7 @@ export class FaceDetectionComponent implements OnInit {
       const dy = Math.abs(y - this.prevPosition.y);
   
       if (dx < FACE_CONSTANTS.MOVEMENT.THRESHOLD && dy < FACE_CONSTANTS.MOVEMENT.THRESHOLD) {
-        if (this.median_age !== null) {
+        if (this.median_age !== null && this.mode_gender !== null) {
           this.stayCounter++; // Increment if not moving
         }
       } else {
@@ -367,10 +376,16 @@ export class FaceDetectionComponent implements OnInit {
   private async handleUnknownFace(detection: any) {
     this.recognizestate = false;
     
-    if (this.stayCounter > FACE_CONSTANTS.MOVEMENT.STILL_COUNT) {
+    if (this.stayCounter > FACE_CONSTANTS.MOVEMENT.STILL_COUNT && this.shouldRegisterFace()) {
       try {
         const newName = this.generateTimestampName();
-        console.log('Registering face with name:', newName);
+        // Check if the name is valid
+        if (!newName || newName.trim() === '') {
+          console.error('Invalid name for face registration');
+          return;
+        } 
+        console.log('Generated name for face registration:', newName);
+        // Register the face with the generated name
         const registeredFace = registerFace(detection.descriptor, newName.trim());
         faceDataStore = getFaceDataStore(); // Update local store
         this.recognizedname = newName;
@@ -403,6 +418,9 @@ export class FaceDetectionComponent implements OnInit {
   
   private handleNoFaceRecognized() {
     this.stayCounter = 0;
+    if (this.resultname !== null) {
+      this.prev_resultname = this.resultname;
+    }
     this.resultname = null;
     this.recognizestate = false;
   }
@@ -425,8 +443,7 @@ export class FaceDetectionComponent implements OnInit {
           formData.append('mood', this.mode_mood);
         }
         
-        formData.append('recognizestate', this.recognizestate?.toString() || 'false');
-        formData.append('recognizedname', this.recognizedname || this.resultname || 'unKnown');
+        formData.append('recognizestate', this.personRecognizeState);
 
         this.lastUploadTime = currentTime;
         const result = await axios.post(`${this.serverUrl}/upload`, formData);
@@ -454,8 +471,20 @@ export class FaceDetectionComponent implements OnInit {
         formData.append('mood', this.mode_mood);
       }
       
-      formData.append('recognizestate', 'false');
-      formData.append('recognizedname', 'lost');
+      // Update person recognition state based on face and body detection
+      this.updatePersonRecognizeState();
+      
+      // Add the person recognition state to form data
+      formData.append('recognizestate', this.personRecognizeState);
+      
+      // Handle name based on detection state
+      if (this.personRecognizeState === 'true') {
+        // Person is detected (either by face or body)
+        formData.append('recognizedname', this.recognizedname || this.resultname || this.prev_resultname || 'personDetected');
+      } else {
+        // No person detected
+        formData.append('recognizedname', 'lost');
+      }
 
       this.lastUploadTime = currentTime;
       const result = await axios.post(`${this.serverUrl}/upload`, formData);
@@ -478,8 +507,15 @@ export class FaceDetectionComponent implements OnInit {
     }
   
     this.resetAllFaceData();
+    this.faceRecognizeState = 'false';
+    this.updatePersonRecognizeState();
   }
   
+  private handleBodyDetection() {
+    this.bodyRecognizeState = 'true';
+    this.updatePersonRecognizeState();
+  }
+
   private resetAllFaceData() {
     this.age = null;
     this.mood = null;
@@ -491,6 +527,7 @@ export class FaceDetectionComponent implements OnInit {
     this.mode_gender = null;
     this.mode_mood = null;
     this.recognizestate = null;
+    this.resultname = null;
     this.recognizedname = null;
   }
 
@@ -527,7 +564,17 @@ export class FaceDetectionComponent implements OnInit {
     const mi = ('00' + now.getMinutes()).slice(-2);
     const ss = ('00' + now.getSeconds()).slice(-2);
   
+    // If median_age or mode_gender is null, return null to indicate we should retry later
+    if (this.median_age === null || this.mode_gender === null) {
+      return '';
+    }
+    
     return `${yyyy}${mm}${dd}_${hh}${mi}${ss}_${this.median_age}_${this.mode_gender}`;
+  }
+
+  // Check if we have enough data to register a face
+  private shouldRegisterFace(): boolean {
+    return this.median_age !== null && this.mode_gender !== null;
   }
 
   // 現在認識している顔に対応する名前を更新するメソッド
@@ -616,5 +663,12 @@ export class FaceDetectionComponent implements OnInit {
     } catch (error) {
       console.log(`Using default server port: ${this.serverPort}`);
     }
+  }
+
+  private updatePersonRecognizeState(): void {
+    const faceDetected = this.faceRecognizeState === 'true';
+    const bodyDetected = this.bodyRecognizeState === 'true';
+    
+    this.personRecognizeState = (faceDetected || bodyDetected) ? 'true' : 'false';
   }
 }

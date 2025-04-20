@@ -4,36 +4,46 @@
     <video #video id="video" width="640" height="480" autoplay></video>
     <canvas #canvas id="canvas" width="640" height="480"></canvas>
   </div>
-  <div class="info-container">
-    <div *ngIf="age" class="info-item">
-      <span class="label">Age:</span>
-      <span class="value">{{age}}</span>
-      <span class="label">Age (Median):</span>
-      <span class="value">{{median_age}}</span>
-    </div>
-    <div *ngIf="gender" class="info-item">
-      <span class="label">Gender:</span>
-      <span class="value">{{gender}}</span>
-      <span class="label">Gender (Mode):</span>
-      <span class="value">{{mode_gender}}</span>
-    </div>
-    <div *ngIf="mood" class="info-item">
-      <span class="label">Mood:</span>
-      <span class="value">{{mood}}</span>
-      <span class="label">Mood (Mode):</span>
-      <span class="value">{{mode_mood}}</span>
-    </div>
+
+
+  <div class="info-table-container">
+    <table class="info-table">
+      <tbody>
+        <tr>
+          <td *ngIf="age" class="info-cell">
+            <span class="label">Age (Median):</span>
+            <span class="value">{{age || '-'}}({{median_age || '-'}})</span>
+          </td>
+          <td *ngIf="gender" class="info-cell">
+            <span class="label">Gender (Mode):</span>
+            <span class="value">{{gender || '-'}}({{mode_gender || '-'}})</span>
+          </td>
+          <td *ngIf="mood" class="info-cell">
+            <span class="label">Mood (Mode):</span>
+            <span class="value">{{mood || '-'}}({{mode_mood || '-'}})</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="info-cell">
+            <span class="label">Face Status:</span>
+            <span class="value">{{recognizestate|| 'Not detected'}}</span>
+          </td>
+          <td class="info-cell">
+            <span class="label">Body Status:</span>
+            <span class="value">{{bodyRecognizeState}}</span>
+          </td>
+          <td class="info-cell">
+            <span class="label">Person Status:</span>
+            <span class="value">{{personRecognizeState || 'Not detected'}}</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
-  <div class="info2-container">
-    <div *ngIf="recognizestate" class="info-item">
-      <span class="label">Status:</span>
-      <span class="value">{{recognizestate}}</span>
-    </div>
-    <div *ngIf="recognizedname" class="info-item">
-      <span class="label">Name:</span>
-      <span class="value">{{recognizedname}}</span>
-    </div>
+  <div *ngIf="recognizedname" class="info-item">
+    <span class="label">Name:</span>
+    <span class="value">{{recognizedname}}</span>
   </div>
   <div>
     <button (click)="clearSavedFaces()">Clear Saved Faces</button>
