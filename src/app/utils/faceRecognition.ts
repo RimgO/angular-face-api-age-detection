@@ -33,19 +33,32 @@ export const initializeFaceDataStore = (faces: FaceData[]) => {
   }));
 };
 
-export const initializeFaceApi = async () => {
+export async function initializeFaceApi() {
   try {
-    await Promise.all([
-      faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models'),
-      faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models'),
-      faceapi.nets.ssdMobilenetv1.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models')
-    ]);
-    console.log('Models loaded successfully');
+    console.log('Initializing face-api.js');
+    // モデルパスが正しいか確認
+    const modelPath = '/assets/models/';
+    console.log('Using model path:', modelPath);
+    
+    // ファイルの存在確認を追加
+    try {
+      const testPath = `${modelPath}ssd_mobilenetv1_model-weights_manifest.json`;
+      const response = await fetch(testPath);
+      if (!response.ok) {
+        throw new Error(`Model file not accessible: ${testPath}`);
+      }
+      console.log('Model file accessible');
+    } catch (e: any) { // ここで型アサーションを追加
+      console.error('Model file check failed:', e);
+      throw new Error('Failed to access model files: ' + (e.message || 'Unknown error'));
+    }
+    
+    return true;
   } catch (error) {
-    console.error('Error loading models:', error);
+    console.error('Failed to initialize face-api.js:', error);
     throw new Error('Failed to load face-api.js models');
   }
-};
+}
 
 export const detectFace = async (imageElement: HTMLImageElement | HTMLVideoElement): Promise<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection; }, faceapi.FaceLandmarks68>> | null> => {
     const detection = await faceapi.detectSingleFace(imageElement)

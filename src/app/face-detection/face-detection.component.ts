@@ -83,8 +83,14 @@ export class FaceDetectionComponent implements OnInit {
       // Check for environment variable port configuration
       this.initializeServerPort();
       
-      // Face Recognitionの初期化
-      await initializeFaceApi();
+      // Face Recognitionの初期化 - エラー処理を強化
+      try {
+        await initializeFaceApi();
+        console.log('Face API initialized successfully');
+      } catch (e) {
+        console.error('Face API initialization failed:', e);
+        throw e;
+      }
 
       await this.loadModels();
       console.log('Models loaded successfully');
@@ -104,27 +110,38 @@ export class FaceDetectionComponent implements OnInit {
 
   // Load saved faces from localStorage
   private loadSavedFaces() {
-    const savedFaces = localStorage.getItem(this.STORAGE_KEY);
-    if (savedFaces) {
-      try {
-        const parsedFaces = JSON.parse(savedFaces);
-        // Initialize the global faceDataStore
-        initializeFaceDataStore(parsedFaces);
-        console.log('Loaded saved faces:', getFaceDataStore());
-      } catch (error) {
-        console.error('Error loading saved faces:', error);
-        // If there's an error, clear the corrupted data
-        this.clearSavedFaces();
+    try {
+      // Check if we're in a browser environment and localStorage is available
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const savedFaces = localStorage.getItem(this.STORAGE_KEY);
+        if (savedFaces) {
+          try {
+            const parsedFaces = JSON.parse(savedFaces);
+            // Initialize the global faceDataStore
+            initializeFaceDataStore(parsedFaces);
+            console.log('Loaded saved faces:', getFaceDataStore());
+          } catch (error) {
+            console.error('Error loading saved faces:', error);
+            // If there's an error, clear the corrupted data
+            this.clearSavedFaces();
+          }
+        }
+      } else {
+        console.log('localStorage is not available in this environment');
       }
+    } catch (error) {
+      console.error('Error accessing localStorage:', error);
     }
   }
 
   // Save faces to localStorage
   private saveFaces() {
     try {
-      const currentFaces = getFaceDataStore();
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(currentFaces));
-      console.log('Saved faces to localStorage:', currentFaces);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const currentFaces = getFaceDataStore();
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(currentFaces));
+        console.log('Saved faces to localStorage:', currentFaces);
+      }
     } catch (error) {
       console.error('Error saving faces:', error);
     }
@@ -132,9 +149,15 @@ export class FaceDetectionComponent implements OnInit {
 
   // Clear all saved faces
   public clearSavedFaces() {
-    localStorage.removeItem(this.STORAGE_KEY);
-    initializeFaceDataStore([]);  // Initialize with empty array
-    console.log('Cleared all saved faces');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem(this.STORAGE_KEY);
+      }
+      initializeFaceDataStore([]);  // Initialize with empty array
+      console.log('Cleared all saved faces');
+    } catch (error) {
+      console.error('Error clearing saved faces:', error);
+    }
   }
 
   // Method to handle visibility change
@@ -480,10 +503,10 @@ export class FaceDetectionComponent implements OnInit {
       // Handle name based on detection state
       if (this.personRecognizeState === 'true') {
         // Person is detected (either by face or body)
-        formData.append('recognizedname', this.recognizedname || this.resultname || this.prev_resultname || 'personDetected');
+        formData.append('recognizedname', this.recognizedname || this.resultname || this.prev_resultname || 'detectNoname');
       } else {
         // No person detected
-        formData.append('recognizedname', 'lost');
+        formData.append('recognizedname', this.prev_resultname || 'lost');
       }
 
       this.lastUploadTime = currentTime;

@@ -52,3 +52,4 @@ src/__pycache__
 src/venv/*
 src/venv
 
+.env
